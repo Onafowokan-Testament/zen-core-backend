@@ -1,6 +1,5 @@
 import os
 
-import matplotlib.pyplot as plt
 import requests
 import streamlit as st
 from dotenv import load_dotenv
@@ -126,7 +125,7 @@ def app():
             value=optimal_values["humidity"]["max"],
         )
 
-    # Show optimal values
+    # Show optimal values in cards using columns
     st.write(f"Optimal temperature range: {temp_min}°C - {temp_max}°C")
     st.write(f"Optimal humidity range: {humidity_min}% - {humidity_max}%")
 
@@ -135,24 +134,34 @@ def app():
 
     sensor_data = fetch_sensor_data()
 
-    # Display sensor data in an aesthetic way
+    # Display sensor data in cards (using columns)
     st.write("### Sensor Data:")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.metric(
-            "Temperature (°C)",
-            (
-                f"{sensor_data['temperature']:.2f}"
-                if sensor_data["temperature"]
-                else "No data"
-            ),
+        st.markdown(
+            f"""
+            <div style="padding: 10px; background-color: #f0f0f5; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h5 style="color:green">Temperature (°C)</h5>
+                <p style="font-size: 24px; color: {'green' if sensor_data['temperature'] and temp_min <= sensor_data['temperature'] <= temp_max else 'red'};">
+                    {sensor_data['temperature']:.2f}°C
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     with col2:
-        st.metric(
-            "Humidity (%)",
-            f"{sensor_data['humidity']:.2f}" if sensor_data["humidity"] else "No data",
+        st.markdown(
+            f"""
+            <div style="padding: 10px; background-color: #f0f0f5; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h5 style="color:green">Humidity (%)</h5>
+                <p style="font-size: 24px; color: {'green' if sensor_data['humidity'] and humidity_min <= sensor_data['humidity'] <= humidity_max else 'red'};">
+                    {sensor_data['humidity']:.2f}%
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     # Analyzing sensor data
@@ -167,26 +176,6 @@ def app():
             st.markdown(f"**{sensor.capitalize()}:** 🚨 {result}")
         else:
             st.markdown(f"**{sensor.capitalize()}:** ✅ {result}")
-
-    # Plot the data using histograms and show sensor data analysis
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-
-    # # Temperature Histogram
-    # if sensor_data["temperature"] is not None:
-    #     sns.histplot(sensor_data["temperature"], kde=True, ax=ax[0], color="skyblue")
-    #     ax[0].set_title("Temperature Distribution")
-    #     ax[0].set_xlabel("Temperature (°C)")
-    #     ax[0].set_ylabel("Frequency")
-
-    # # Humidity Histogram
-    # if sensor_data["humidity"] is not None:
-    #     sns.histplot(sensor_data["humidity"], kde=True, ax=ax[1], color="orange")
-    #     ax[1].set_title("Humidity Distribution")
-    #     ax[1].set_xlabel("Humidity (%)")
-    #     ax[1].set_ylabel("Frequency")
-
-    # # Show the plots
-    # st.pyplot(fig)
 
 
 # Run the Streamlit app
