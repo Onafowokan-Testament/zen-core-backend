@@ -247,7 +247,7 @@ def app():
     # Button to generate insight
     if st.button("Generate Insight", key="generate_button"):
         # Get GPT analysis
-        st.subheader("Analyzing plant environment using GPT...")
+        st.subheader("Analyzing plant environment ...")
         gpt_analysis = get_gpt_analysis(plant_name, sensor_data)
 
         # Display the analysis in a styled card with improved readability
@@ -265,4 +265,3 @@ def app():
 # Run the Streamlit app
 if __name__ == "__main__":
     app()
-
