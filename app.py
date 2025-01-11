@@ -4,6 +4,7 @@ import google.generativeai as genai
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -16,24 +17,15 @@ sensor_pins = {
     "humidity": "V1",
 }
 
-# Optimal conditions for different plants (example)
+# Optimal conditions for different plants
 optimal_conditions = {
-    "pepper": {
-        "temperature_range": "25-30°C",
-        "humidity_range": "60-75%",
-    },
-    "groundnut": {
-        "temperature_range": "20-28°C",
-        "humidity_range": "50-70%",
-    },
-    "tomato": {
-        "temperature_range": "22-28°C",
-        "humidity_range": "65-80%",
-    },
+    "pepper": {"temperature_range": "25-30°C", "humidity_range": "60-75%"},
+    "groundnut": {"temperature_range": "20-28°C", "humidity_range": "50-70%"},
+    "tomato": {"temperature_range": "22-28°C", "humidity_range": "65-80%"},
 }
 
 
-# Function to fetch sensor data from Blynk
+# Fetch sensor data from Blynk
 def fetch_sensor_data():
     sensor_data = {}
     for sensor, pin in sensor_pins.items():
@@ -48,220 +40,154 @@ def fetch_sensor_data():
     return sensor_data
 
 
-# Function to generate a dynamic prompt for analysis with concise output and actionable advice
-def generate_dynamic_prompt(plant_name, sensor_data):
-    optimal_temp_range = optimal_conditions.get(plant_name, {}).get(
-        "temperature_range", "No data"
-    )
-    optimal_humidity_range = optimal_conditions.get(plant_name, {}).get(
-        "humidity_range", "No data"
-    )
-
-    temperature = sensor_data.get("temperature", "No data")
-    humidity = sensor_data.get("humidity", "No data")
-
-    # Construct a detailed prompt for analysis and suggest actions
-    prompt = f"""
-    Analyze the environment for growing {plant_name}. 
-    The optimal temperature range for {plant_name} is {optimal_temp_range} and the optimal humidity range is {optimal_humidity_range}. 
-    The current temperature is {temperature}°C and the current humidity is {humidity}%. 
-    Based on these conditions, provide a concise summary of the plant's current environment, followed by actionable advice in the form of short bullet points on what the farmer can do to improve the environment.
-    Limit the output to a brief summary and 3-5 actionable steps.
-    """
-
-    return prompt
-
-
-# Function to get AI-generated analysis from Gemini without system role
-def get_gpt_analysis(plant_name, sensor_data):
-    # Start the conversation with initial user and model messages
-    chat = genai.GenerativeModel("gemini-1.5-flash").start_chat(
-        history=[
-            {"role": "user", "parts": f"Tell me how to care for my {plant_name}."},
-        ]
-    )
-
-    # Generate dynamic prompt for the selected plant
-    prompt = generate_dynamic_prompt(plant_name, sensor_data)
-
-    # Send message to the model and get response
-    response = chat.send_message(prompt)
+# Analyze image with Gemini AI
+def analyze_image_with_gemini(image):
+    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
+    prompt = "Analyze the plant image for visible diseases, symptoms, and suggest actions to take."
+    response = model.generate_content([prompt, image])
     return response.text
 
 
-# Streamlit app
+# Analyze environment with Gemini AI
+def analyze_environment_with_gemini(temperature, humidity, plant_name):
+    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
+    temp_range = optimal_conditions[plant_name]["temperature_range"]
+    humidity_range = optimal_conditions[plant_name]["humidity_range"]
+    prompt = (
+        f"Analyze environment for {plant_name}:\n"
+        f"- Current temperature: {temperature}°C\n"
+        f"- Current humidity: {humidity}%\n"
+        f"- Optimal temperature: {temp_range}\n"
+        f"- Optimal humidity: {humidity_range}\n"
+        "Provide actionable insights."
+    )
+    response = model.generate_content([prompt])
+    return response.text
+
+
+# Streamlit App
 def app():
+    # Set up page aesthetics
     st.set_page_config(
-        page_title="Farm-Tech Growth Analysis", page_icon="🌱", layout="wide"
+        page_title="🌱 Farm-Tech Monitoring", page_icon="🌿", layout="wide"
     )
 
-    # Custom CSS for modern design with green farm-tech theme
+    # Custom CSS for styling
     st.markdown(
         """
     <style>
-        body {
-            background-color: #eaf0e0;
-            font-family: 'Arial', sans-serif;
-            color: #2c3e50;
-        }
-        .card {
-            background-color: #ffffff;
-            padding: 20px;
-            margin: 15px 0;
-            border-radius: 15px;
-            box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.1);
-        }
-        .header-text {
-            color: #2c3e50;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-        .subheader-text {
-            color: #34495e;
-            font-size: 1rem;
-            margin-bottom: 20px;
-        }
-        .button {
-            background-color: #27ae60;
-            color: white;
-            padding: 12px 30px;
-            border-radius: 8px;
-            font-size: 1rem;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-        .button:hover {
-            background-color: #2ecc71;
-        }
-        .card p {
-            color: #202124;
-        }
-        .card h3 {
-            color: #1e1e1e;
-            font-size: 1.2rem;
-            font-weight: 500;
-        }
-        .optimal-values {
-            background-color: #d5f5e3;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-            margin-top: 20px;
-        }
-        .optimal-values h4 {
-            color: #2ecc71;
-            font-weight: bold;
-        }
-        .optimal-values p {
-            color: #27ae60;
-        }
-        .insight-card {
-            background-color: #ffffff;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 15px;
-            box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.1);
-            color: #2c3e50;
-        }
-        .insight-card h3 {
-            color: #2c3e50;
-            font-weight: bold;
-        }
-        .sensor-cards {
-            display: flex;
-            justify-content: space-between;
-        }
-        .sensor-card {
-            flex: 1;
-            margin-right: 10px;
-        }
-        .sensor-card:last-child {
-            margin-right: 0;
-        }
+    body {
+        background-color: #ffffff;
+        font-family: 'Arial', sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+    }
+    .container {
+        width: 90%;
+        max-width: 1200px;
+    }
+    .card {
+        background-color: white;
+        color: #4caf50;
+        border-radius: 12px;
+        padding: 40px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-right: 20px;
+        margin-left: 20px;
+        height: auto;
+    }
+    .two-column > div {
+        padding: 20px;
+    }
+    .header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
     </style>
     """,
         unsafe_allow_html=True,
     )
 
-    # Sidebar title and description
-    st.sidebar.title("Farm-Tech Growth Monitoring")
-    st.sidebar.subheader("Monitor your plant environment efficiently!")
-
-    # User input for plant selection
-    plant_name = st.selectbox("Choose a plant", ["pepper", "groundnut", "tomato"])
-
-    # Fetch sensor data
-    st.subheader("Fetching sensor data...")
-    sensor_data = fetch_sensor_data()
-
-    # Show sensor data
-    temperature = (
-        f"{sensor_data['temperature']:.2f} °C"
-        if sensor_data["temperature"] is not None
-        else "No data available"
-    )
-    humidity = (
-        f"{sensor_data['humidity']:.2f}%"
-        if sensor_data["humidity"] is not None
-        else "No data available"
-    )
-
-    # Display optimal conditions in a beautiful card layout
-    optimal_temp_range = optimal_conditions.get(plant_name, {}).get(
-        "temperature_range", "No data"
-    )
-    optimal_humidity_range = optimal_conditions.get(plant_name, {}).get(
-        "humidity_range", "No data"
-    )
-
+    # Header
     st.markdown(
-        f"""
-        <div class="optimal-values">
-            <h4>Optimal Growth Conditions for {plant_name.title()}</h4>
-            <p><strong>Temperature Range:</strong> {optimal_temp_range}</p>
-            <p><strong>Humidity Range:</strong> {optimal_humidity_range}</p>
-        </div>
-    """,
-        unsafe_allow_html=True,
+        "<h1 class='header'>🌱 Farm-Tech Growth Monitoring</h1>", unsafe_allow_html=True
     )
 
-    # Display sensor data in a single row of two cards
-    st.markdown(
-        f"""
-        <div class="sensor-cards">
-            <div class="sensor-card card">
-                <h3>Temperature (°C)</h3>
-                <p><strong>Sensor Reading:</strong> {temperature}</p>
-            </div>
-            <div class="sensor-card card">
-                <h3>Humidity (%)</h3>
-                <p><strong>Sensor Reading:</strong> {humidity}</p>
-            </div>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    # Button to generate insight
-    if st.button("Generate Insight", key="generate_button"):
-        # Get GPT analysis
-        st.subheader("Analyzing plant environment ...")
-        gpt_analysis = get_gpt_analysis(plant_name, sensor_data)
-
-        # Display the analysis in a styled card with improved readability
-        st.markdown(
-            f"""
-            <div class="insight-card">
-                <h3>AI Analysis of Plant Environment</h3>
-                <p>{gpt_analysis}</p>
-            </div>
-        """,
-            unsafe_allow_html=True,
+    # Container for the main content
+    with st.container():
+        # Step 1: Plant Selection
+        plant_name = st.selectbox(
+            "Choose a plant to monitor",
+            ["pepper", "groundnut", "tomato"],
+            key="plant_selection",
         )
 
+        # Optimal conditions in two-column layout
+        st.markdown("<h3>Optimal Conditions</h3>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(
+                f"<div class='card'>"
+                f"<b>Temperature:</b> {optimal_conditions[plant_name]['temperature_range']}</div>",
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.markdown(
+                f"<div class='card'>"
+                f"<b>Humidity:</b> {optimal_conditions[plant_name]['humidity_range']}</div>",
+                unsafe_allow_html=True,
+            )
 
-# Run the Streamlit app
+        # Real-time sensor data in cards
+        st.markdown("<h3>Real-Time Sensor Data</h3>", unsafe_allow_html=True)
+        sensor_data = fetch_sensor_data()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(
+                f"<div class='card'>"
+                f"<b>Temperature:</b> {sensor_data.get('temperature', 'N/A')}°C</div>",
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.markdown(
+                f"<div class='card'>"
+                f"<b>Humidity:</b> {sensor_data.get('humidity', 'N/A')}%</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Environmental analysis in card
+        if sensor_data.get("temperature") and sensor_data.get("humidity"):
+            if st.button("Analyze Environment"):
+                environment_analysis = analyze_environment_with_gemini(
+                    sensor_data["temperature"], sensor_data["humidity"], plant_name
+                )
+                st.markdown(
+                    f"<div class='card'>"
+                    f"<b>Environment Analysis:</b><br>{environment_analysis}</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # Image analysis in card
+        st.markdown("<h3>Plant Image Analysis</h3>", unsafe_allow_html=True)
+        uploaded_image = st.file_uploader(
+            "Upload an image of your plant", type=["jpg", "jpeg", "png"]
+        )
+        if uploaded_image is not None:
+            img = Image.open(uploaded_image)
+            st.image(img, caption="Uploaded Plant Image", use_container_width=True)
+            if st.button("Analyze Image"):
+                image_analysis = analyze_image_with_gemini(img)
+                st.markdown(
+                    f"<div class='card'>"
+                    f"<b>Image Analysis:</b><br>{image_analysis}</div>",
+                    unsafe_allow_html=True,
+                )
+
+
+# Run the app
 if __name__ == "__main__":
     app()
