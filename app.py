@@ -1,5 +1,6 @@
 import os
 
+import matplotlib.pyplot as plt
 import requests
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,7 +15,6 @@ sensor_pins = {
     "humidity": "V1",
 }
 
-# Dictionary of plants and their optimal values
 plants_requirements = {
     "pepper": {
         "temperature": {"min": 24, "max": 30},
@@ -82,7 +82,13 @@ def analyze_data(sensor_data, optimal_values):
 
 # Streamlit app
 def app():
-    st.title("Plant Growth Analysis App")
+    st.set_page_config(
+        page_title="Farm-Tech Growth Analysis", page_icon="🌱", layout="wide"
+    )
+
+    # Sidebar title and description
+    st.sidebar.title("Farm-Tech Growth Monitoring")
+    st.sidebar.subheader("Monitor your plant environment efficiently!")
 
     # User input for plant selection
     plant_name = st.selectbox("Choose a plant", ["pepper", "groundnut", "tomato"])
@@ -125,57 +131,95 @@ def app():
             value=optimal_values["humidity"]["max"],
         )
 
-    # Show optimal values in cards using columns
-    st.write(f"Optimal temperature range: {temp_min}°C - {temp_max}°C")
-    st.write(f"Optimal humidity range: {humidity_min}% - {humidity_max}%")
+    # Show optimal values in Cards
+    st.markdown(
+        f"""
+    <style>
+        .card {{
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #e3f9e5;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }}
+        .card h3 {{
+            color: #2d6a4f;
+        }}
+
+        .card p{{
+            color:  #2d6a4f
+        }}
+    </style>
+    <div class="card">
+        <h3>Optimal Temperature Range: {temp_min}°C - {temp_max}°C</h3>
+        <p>Ideal temperature range for {plant_name} to thrive.</p>
+    </div>
+    <div class="card">
+        <h3>Optimal Humidity Range: {humidity_min}% - {humidity_max}%</h3>
+        <p>Ideal humidity levels for {plant_name} to thrive.</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Fetch sensor data
     st.subheader("Fetching sensor data...")
 
     sensor_data = fetch_sensor_data()
 
-    # Display sensor data in cards (using columns)
-    st.write("### Sensor Data:")
-    col1, col2 = st.columns(2)
+    # Show sensor data in a modern way (using Card-style layout)
+    temperature = (
+        f"{sensor_data['temperature']:.2f} °C"
+        if sensor_data["temperature"] is not None
+        else "No data available"
+    )
+    humidity = (
+        f"{sensor_data['humidity']:.2f}%"
+        if sensor_data["humidity"] is not None
+        else "No data available"
+    )
 
-    with col1:
-        st.markdown(
-            f"""
-            <div style="padding: 10px; background-color: #f0f0f5; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                <h5 style="color:green">Temperature (°C)</h5>
-                <p style="font-size: 24px; color: {'green' if sensor_data['temperature'] and temp_min <= sensor_data['temperature'] <= temp_max else 'red'};">
-                    {sensor_data['temperature']:.2f}°C
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with col2:
-        st.markdown(
-            f"""
-            <div style="padding: 10px; background-color: #f0f0f5; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                <h5 style="color:green">Humidity (%)</h5>
-                <p style="font-size: 24px; color: {'green' if sensor_data['humidity'] and humidity_min <= sensor_data['humidity'] <= humidity_max else 'red'};">
-                    {sensor_data['humidity']:.2f}%
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f"""
+        <div class="card">
+            <h3>Temperature (°C)</h3>
+            <p>{temperature}</p>
+        </div>
+        <div class="card">
+            <h3>Humidity (%)</h3>
+            <p>{humidity}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # Analyzing sensor data
     st.subheader("Analyzing sensor data...")
 
     analysis = analyze_data(sensor_data, optimal_values)
 
-    # Display analysis results with colored labels
-    st.write("### Analysis:")
     for sensor, result in analysis.items():
-        if "out of range" in result:
-            st.markdown(f"**{sensor.capitalize()}:** 🚨 {result}")
-        else:
-            st.markdown(f"**{sensor.capitalize()}:** ✅ {result}")
+        color = "green" if "out of range" not in result else "red"
+        st.markdown(
+            f"""
+        <div style="background-color: {color}; color: white; padding: 10px; border-radius: 10px; margin-bottom: 15px;">
+            <h4>{sensor.capitalize()}</h4>
+            <p>{result}</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    # Optionally, add some interactive plots using Matplotlib
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.plot([20, 25, 30, 35], label="Temperature Variation", color="#4caf50")
+    ax.set_title("Temperature Over Time")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Temperature (°C)")
+    ax.legend()
+
+    st.pyplot(fig)
 
 
 # Run the Streamlit app
