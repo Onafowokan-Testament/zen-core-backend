@@ -1,46 +1,36 @@
 import os
 
-import matplotlib.pyplot as plt
+import google.generativeai as genai
 import requests
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
 
-BLYNK_TOKEN = os.getenv("BLYNK_TOKEN")
-BLYNK_URL = os.getenv("BLYNK_URL")
+# Configure Gemini API
+genai.configure(api_key=os.getenv("GPT_API_KEY"))
 
+# Sensor and plant data
 sensor_pins = {
     "temperature": "V0",
     "humidity": "V1",
 }
 
-plants_requirements = {
+# Optimal conditions for different plants (example)
+optimal_conditions = {
     "pepper": {
-        "temperature": {"min": 24, "max": 30},
-        "humidity": {"min": 60, "max": 70},
+        "temperature_range": "25-30°C",
+        "humidity_range": "60-75%",
     },
     "groundnut": {
-        "temperature": {"min": 25, "max": 30},
-        "humidity": {"min": 40, "max": 60},
+        "temperature_range": "20-28°C",
+        "humidity_range": "50-70%",
     },
     "tomato": {
-        "temperature": {"min": 20, "max": 25},
-        "humidity": {"min": 60, "max": 70},
+        "temperature_range": "22-28°C",
+        "humidity_range": "65-80%",
     },
 }
-
-
-# Function to get optimal values for the plant
-def get_optimal_values_for_plant(plant_name: str):
-    plant_data = plants_requirements.get(plant_name)
-    if plant_data:
-        return plant_data
-    else:
-        return {
-            "temperature": {"min": 20, "max": 30},
-            "humidity": {"min": 50, "max": 70},
-        }
 
 
 # Function to fetch sensor data from Blynk
@@ -48,7 +38,9 @@ def fetch_sensor_data():
     sensor_data = {}
     for sensor, pin in sensor_pins.items():
         try:
-            response = requests.get(f"{BLYNK_URL}get?token={BLYNK_TOKEN}&pin={pin}")
+            response = requests.get(
+                f"{os.getenv('BLYNK_URL')}get?token={os.getenv('BLYNK_TOKEN')}&pin={pin}"
+            )
             response.raise_for_status()
             sensor_data[sensor] = float(response.text)
         except Exception:
@@ -56,34 +48,141 @@ def fetch_sensor_data():
     return sensor_data
 
 
-# Function to analyze sensor data
-def analyze_data(sensor_data, optimal_values):
-    analysis_results = {}
-    for sensor, value in sensor_data.items():
-        if value is None:
-            analysis_results[sensor] = "No data available"
-            continue
+# Function to generate a dynamic prompt for analysis with concise output and actionable advice
+def generate_dynamic_prompt(plant_name, sensor_data):
+    optimal_temp_range = optimal_conditions.get(plant_name, {}).get(
+        "temperature_range", "No data"
+    )
+    optimal_humidity_range = optimal_conditions.get(plant_name, {}).get(
+        "humidity_range", "No data"
+    )
 
-        optimal_range = optimal_values.get(sensor)
-        if optimal_range:
-            if optimal_range["min"] <= value <= optimal_range["max"]:
-                analysis_results[sensor] = (
-                    f"{sensor} is within the optimal range ({optimal_range['min']}–{optimal_range['max']})."
-                )
-            else:
-                analysis_results[sensor] = (
-                    f"{sensor} is out of range! Current value: {value}. "
-                    f"Expected range: {optimal_range['min']}–{optimal_range['max']}."
-                )
-        else:
-            analysis_results[sensor] = f"No optimal range defined for {sensor}."
-    return analysis_results
+    temperature = sensor_data.get("temperature", "No data")
+    humidity = sensor_data.get("humidity", "No data")
+
+    # Construct a detailed prompt for analysis and suggest actions
+    prompt = f"""
+    Analyze the environment for growing {plant_name}. 
+    The optimal temperature range for {plant_name} is {optimal_temp_range} and the optimal humidity range is {optimal_humidity_range}. 
+    The current temperature is {temperature}°C and the current humidity is {humidity}%. 
+    Based on these conditions, provide a concise summary of the plant's current environment, followed by actionable advice in the form of short bullet points on what the farmer can do to improve the environment.
+    Limit the output to a brief summary and 3-5 actionable steps.
+    """
+
+    return prompt
+
+
+# Function to get AI-generated analysis from Gemini without system role
+def get_gpt_analysis(plant_name, sensor_data):
+    # Start the conversation with initial user and model messages
+    chat = genai.GenerativeModel("gemini-1.5-flash").start_chat(
+        history=[
+            {"role": "user", "parts": f"Tell me how to care for my {plant_name}."},
+        ]
+    )
+
+    # Generate dynamic prompt for the selected plant
+    prompt = generate_dynamic_prompt(plant_name, sensor_data)
+
+    # Send message to the model and get response
+    response = chat.send_message(prompt)
+    return response.text
 
 
 # Streamlit app
 def app():
     st.set_page_config(
         page_title="Farm-Tech Growth Analysis", page_icon="🌱", layout="wide"
+    )
+
+    # Custom CSS for modern design with green farm-tech theme
+    st.markdown(
+        """
+    <style>
+        body {
+            background-color: #eaf0e0;
+            font-family: 'Arial', sans-serif;
+            color: #2c3e50;
+        }
+        .card {
+            background-color: #ffffff;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 15px;
+            box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        .header-text {
+            color: #2c3e50;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .subheader-text {
+            color: #34495e;
+            font-size: 1rem;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #27ae60;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #2ecc71;
+        }
+        .card p {
+            color: #202124;
+        }
+        .card h3 {
+            color: #1e1e1e;
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+        .optimal-values {
+            background-color: #d5f5e3;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        .optimal-values h4 {
+            color: #2ecc71;
+            font-weight: bold;
+        }
+        .optimal-values p {
+            color: #27ae60;
+        }
+        .insight-card {
+            background-color: #ffffff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 15px;
+            box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.1);
+            color: #2c3e50;
+        }
+        .insight-card h3 {
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .sensor-cards {
+            display: flex;
+            justify-content: space-between;
+        }
+        .sensor-card {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .sensor-card:last-child {
+            margin-right: 0;
+        }
+    </style>
+    """,
+        unsafe_allow_html=True,
     )
 
     # Sidebar title and description
@@ -93,81 +192,11 @@ def app():
     # User input for plant selection
     plant_name = st.selectbox("Choose a plant", ["pepper", "groundnut", "tomato"])
 
-    st.subheader(f"Fetching optimal values for {plant_name}...")
-
-    # Fetch optimal values
-    optimal_values = get_optimal_values_for_plant(plant_name)
-
-    # Display optimal temperature and humidity using sliders for better interactivity
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write("**Temperature Range (°C)**")
-        temp_min = st.slider(
-            "Min Temperature",
-            min_value=15,
-            max_value=35,
-            value=optimal_values["temperature"]["min"],
-        )
-        temp_max = st.slider(
-            "Max Temperature",
-            min_value=15,
-            max_value=35,
-            value=optimal_values["temperature"]["max"],
-        )
-
-    with col2:
-        st.write("**Humidity Range (%)**")
-        humidity_min = st.slider(
-            "Min Humidity",
-            min_value=0,
-            max_value=100,
-            value=optimal_values["humidity"]["min"],
-        )
-        humidity_max = st.slider(
-            "Max Humidity",
-            min_value=0,
-            max_value=100,
-            value=optimal_values["humidity"]["max"],
-        )
-
-    # Show optimal values in Cards
-    st.markdown(
-        f"""
-    <style>
-        .card {{
-            padding: 20px;
-            border-radius: 10px;
-            background-color: #e3f9e5;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            margin-bottom: 15px;
-        }}
-        .card h3 {{
-            color: #2d6a4f;
-        }}
-
-        .card p{{
-            color:  #2d6a4f
-        }}
-    </style>
-    <div class="card">
-        <h3>Optimal Temperature Range: {temp_min}°C - {temp_max}°C</h3>
-        <p>Ideal temperature range for {plant_name} to thrive.</p>
-    </div>
-    <div class="card">
-        <h3>Optimal Humidity Range: {humidity_min}% - {humidity_max}%</h3>
-        <p>Ideal humidity levels for {plant_name} to thrive.</p>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
     # Fetch sensor data
     st.subheader("Fetching sensor data...")
-
     sensor_data = fetch_sensor_data()
 
-    # Show sensor data in a modern way (using Card-style layout)
+    # Show sensor data
     temperature = (
         f"{sensor_data['temperature']:.2f} °C"
         if sensor_data["temperature"] is not None
@@ -179,49 +208,61 @@ def app():
         else "No data available"
     )
 
+    # Display optimal conditions in a beautiful card layout
+    optimal_temp_range = optimal_conditions.get(plant_name, {}).get(
+        "temperature_range", "No data"
+    )
+    optimal_humidity_range = optimal_conditions.get(plant_name, {}).get(
+        "humidity_range", "No data"
+    )
+
     st.markdown(
         f"""
-        <div class="card">
-            <h3>Temperature (°C)</h3>
-            <p>{temperature}</p>
+        <div class="optimal-values">
+            <h4>Optimal Growth Conditions for {plant_name.title()}</h4>
+            <p><strong>Temperature Range:</strong> {optimal_temp_range}</p>
+            <p><strong>Humidity Range:</strong> {optimal_humidity_range}</p>
         </div>
-        <div class="card">
-            <h3>Humidity (%)</h3>
-            <p>{humidity}</p>
-        </div>
-        """,
+    """,
         unsafe_allow_html=True,
     )
 
-    # Analyzing sensor data
-    st.subheader("Analyzing sensor data...")
+    # Display sensor data in a single row of two cards
+    st.markdown(
+        f"""
+        <div class="sensor-cards">
+            <div class="sensor-card card">
+                <h3>Temperature (°C)</h3>
+                <p><strong>Sensor Reading:</strong> {temperature}</p>
+            </div>
+            <div class="sensor-card card">
+                <h3>Humidity (%)</h3>
+                <p><strong>Sensor Reading:</strong> {humidity}</p>
+            </div>
+        </div>
+    """,
+        unsafe_allow_html=True,
+    )
 
-    analysis = analyze_data(sensor_data, optimal_values)
+    # Button to generate insight
+    if st.button("Generate Insight", key="generate_button"):
+        # Get GPT analysis
+        st.subheader("Analyzing plant environment using GPT...")
+        gpt_analysis = get_gpt_analysis(plant_name, sensor_data)
 
-    for sensor, result in analysis.items():
-        color = "green" if "out of range" not in result else "red"
+        # Display the analysis in a styled card with improved readability
         st.markdown(
             f"""
-        <div style="background-color: {color}; color: white; padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-            <h4>{sensor.capitalize()}</h4>
-            <p>{result}</p>
-        </div>
+            <div class="insight-card">
+                <h3>AI Analysis of Plant Environment</h3>
+                <p>{gpt_analysis}</p>
+            </div>
         """,
             unsafe_allow_html=True,
         )
-
-    # Optionally, add some interactive plots using Matplotlib
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    ax.plot([20, 25, 30, 35], label="Temperature Variation", color="#4caf50")
-    ax.set_title("Temperature Over Time")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Temperature (°C)")
-    ax.legend()
-
-    st.pyplot(fig)
 
 
 # Run the Streamlit app
 if __name__ == "__main__":
     app()
+
