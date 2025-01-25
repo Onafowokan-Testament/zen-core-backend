@@ -1,11 +1,14 @@
+import base64
 import os
 
 import google.generativeai as genai
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from googletrans import Translator
 from PIL import Image
 
+# Load environment variables
 load_dotenv()
 
 # Configure Gemini API
@@ -14,14 +17,27 @@ genai.configure(api_key=os.getenv("GPT_API_KEY"))
 # Sensor and plant data
 sensor_pins = {
     "temperature": "V0",
-    "humidity": "V1",
+    "soil_moisture": "V1",
+    "humidity": "V2",
+    "fertilizer_pump": "V3",
+    "irrigation_pump": "V4",
 }
-
-# Optimal conditions for different plants
 optimal_conditions = {
-    "pepper": {"temperature_range": "25-30°C", "humidity_range": "60-75%"},
-    "groundnut": {"temperature_range": "20-28°C", "humidity_range": "50-70%"},
-    "tomato": {"temperature_range": "22-28°C", "humidity_range": "65-80%"},
+    "pepper": {
+        "temperature": (25, 30),
+        "soil_moisture": (50, 70),
+        "humidity": (60, 75),
+    },
+    "groundnut": {
+        "temperature": (20, 28),
+        "soil_moisture": (40, 60),
+        "humidity": (50, 70),
+    },
+    "tomato": {
+        "temperature": (22, 28),
+        "soil_moisture": (60, 80),
+        "humidity": (65, 80),
+    },
 }
 
 # Emojis for weather conditions
@@ -37,6 +53,9 @@ weather_emojis = {
     "Fog": "🌁",
     "Mist": "🌫️",
 }
+
+# Translator setup
+translator = Translator()
 
 
 # Fetch sensor data from Blynk
@@ -57,236 +76,185 @@ def fetch_sensor_data():
 # Fetch weather data from WeatherAPI
 def fetch_weather(lga):
     try:
-        # Use the LGA as the location in the API request
         url = f"http://api.weatherapi.com/v1/current.json?key={os.getenv('WEATHER_API_KEY')}&q={lga}&aqi=no"
         response = requests.get(url)
         response.raise_for_status()
         weather_data = response.json()
         condition = weather_data["current"]["condition"]["text"]
-        wind_speed = weather_data["current"]["wind_kph"]
-        precipitation = weather_data["current"]["precip_mm"]
-        humidity = weather_data["current"]["humidity"]
-        alert = (
-            weather_data.get("alerts", {})
-            .get("alert", [{}])[0]
-            .get("desc", "No alerts.")
-        )
         return {
             "temperature": weather_data["current"]["temp_c"],
             "condition": condition,
             "emoji": weather_emojis.get(condition, "🌤️"),
-            "wind_speed": wind_speed,
-            "precipitation": precipitation,
-            "humidity": humidity,
-            "alert": alert,
+            "humidity": weather_data["current"]["humidity"],
         }
     except Exception as e:
         return {"error": str(e)}
 
 
-# Analyze image with Gemini AI
-def analyze_image_with_gemini(image):
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
-    prompt = (
-        "Analyze the plant image and provide the following:\n"
-        "1. Name of the disease visible on the plant\n"
-        "2. What causes this disease\n"
-        "3. Give just 2 major actions to take to treat or prevent the disease."
-    )
-    response = model.generate_content([prompt, image])
-    return response.text
+# Translate text using Google Translator
+def translate_text(text, language):
+    lang_codes = {"English": "en", "Yoruba": "yo", "Igbo": "ig", "Hausa": "ha"}
+    target_lang = lang_codes.get(language, "en")
+    return translator.translate(text, dest=target_lang).text
 
 
-# Analyze environment with Gemini AI
-def analyze_environment_with_gemini(temperature, humidity, plant_name):
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
-    temp_range = optimal_conditions[plant_name]["temperature_range"]
-    humidity_range = optimal_conditions[plant_name]["humidity_range"]
-    prompt = (
-        f"Analyze environment for {plant_name}:\n"
-        f"- Current temperature: {temperature}°C\n"
-        f"- Current humidity: {humidity}%\n"
-        f"- Optimal temperature: {temp_range}\n"
-        f"- Optimal humidity: {humidity_range}\n"
-        "Provide actionable insights."
+# Control pumps through Blynk
+def control_pump(pump_pin):
+    try:
+        requests.get(
+            f"{os.getenv('BLYNK_URL')}update?token={os.getenv('BLYNK_TOKEN')}&pin={pump_pin}&value=1"
+        )
+        return "Pump activated successfully."
+    except Exception as e:
+        return str(e)
+
+
+# Soil analysis using Gemini
+def analyze_soil(sensor_data, language):
+
+    prompt = f"Analyze the soil based on these parameters: temperature={sensor_data.get('temperature')}°C, soil moisture={sensor_data.get('soil_moisture')}%, and humidity={sensor_data.get('humidity')}%. Provide the response in {language}."
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    response = model.generate_content(prompt)
+    return response.text if response.text else "Analysis failed."
+
+
+# Plant image analysis using Gemini
+def analyze_plant(image_path, language):
+    with open(image_path, "rb") as img_file:
+        img_content = base64.b64encode(img_file.read()).decode("utf-8")
+    prompt = f"Analyze the health of a plant based on this image. Provide the response in {language}."
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    response = model.generate_content(
+        [{"mime_type": "image/jpeg", "data": img_content}, prompt]
+    ).text
+
+    return response if response else "Analysis failed."
+
+
+# Reusable function to render cards
+def render_card(title, content):
+    st.markdown(
+        f"""
+        <div style="
+            background-color: white; 
+            color: black; 
+            border: 2px solid black; 
+            border-radius: 10px; 
+            padding: 20px; 
+            margin-bottom: 20px;
+            box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
+        ">
+            <h3 style="text-align: center;">{title}</h3>
+            <p style="text-align: center;">{content}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    response = model.generate_content([prompt])
-    return response.text
 
 
 # Streamlit App
 def app():
-    # Set up page aesthetics
     st.set_page_config(
-        page_title="🌱 Farm-Tech Monitoring", page_icon="🌿", layout="wide"
+        page_title="🌱 Zen-Core-Tech Monitoring", page_icon="🌿", layout="wide"
     )
 
-    # Custom CSS for styling
+    # Language selection modal
+    language = st.sidebar.selectbox(
+        "Choose your language", ["English", "Yoruba", "Igbo", "Hausa"]
+    )
+
+    # Function to translate all text dynamically
+    def t(text):
+        return translate_text(text, language)
+
+    # Title
     st.markdown(
-        """
-    <style>
-    body {
-        background-color: #ffffff;
-        font-family: 'Arial', sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
-        margin: 0;
-    }
-    .container {
-        width: 90%;
-        max-width: 1200px;
-    }
-    .card {
-        background-color: white;
-        color: black;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        height: auto;
-        font-size: 14px;
-        width: 100%;
-        display: inline-block;
-        margin-bottom: 20px;
-    }
-    .header {
-        text-align: center;
-        margin-bottom: 40px;
-    }
-    .two-column > div {
-        padding: 20px;
-    }
-    </style>
-    """,
+        f"<h1 style='text-align: center;'>{t('🌱 Zen Core Tech Growth Monitoring')}</h1>",
         unsafe_allow_html=True,
     )
 
-    # Header
-    st.markdown(
-        "<h1 class='header'>🌱 Farm-Tech Growth Monitoring</h1>", unsafe_allow_html=True
-    )
-
-    # Weather data section - FIRST THING NOW
-    st.markdown("<h3>Weather Data</h3>", unsafe_allow_html=True)
-    lga = st.text_input("Enter LGA for weather details", "Lagos")
+    # Weather Data Section
+    lga = st.text_input(t("Enter LGA for weather details"), "Lagos")
     weather_data = fetch_weather(lga)
     if "error" not in weather_data:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Temperature:</b> {weather_data['temperature']}°C</div>",
-                unsafe_allow_html=True,
-            )
-        with col2:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Condition:</b> {weather_data['condition']} {weather_data['emoji']}</div>",
-                unsafe_allow_html=True,
-            )
-        with col3:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Humidity:</b> {weather_data['humidity']}%</div>",
-                unsafe_allow_html=True,
-            )
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Wind Speed:</b> {weather_data['wind_speed']} kph</div>",
-                unsafe_allow_html=True,
-            )
-        with col2:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Precipitation:</b> {weather_data['precipitation']} mm</div>",
-                unsafe_allow_html=True,
-            )
-
-        # Display alert if any
-        if weather_data["alert"] != "No alerts.":
-            st.markdown(
-                f"<div class='card' style='background-color: #ffcccb;'>"
-                f"<b>Weather Alert:</b> {weather_data['alert']}</div>",
-                unsafe_allow_html=True,
-            )
+        render_card(
+            t("Temperature"),
+            f"<b>{t('Temperature')}:</b> {weather_data['temperature']}°C",
+        )
+        render_card(
+            t("Weather Condition"),
+            f"<b>{t('Condition')}:</b> {t(weather_data['condition'])} {weather_data['emoji']}",
+        )
+        render_card(
+            t("Humidity"),
+            f"<b>{t('Humidity')}:</b> {weather_data['humidity']}%",
+        )
     else:
-        st.markdown(
-            f"<div class='card'>{weather_data['error']}</div>", unsafe_allow_html=True
-        )
+        st.error(t(weather_data["error"]))
 
-    # Container for the main content
-    with st.container():
-        # Step 1: Plant Selection
-        plant_name = st.selectbox(
-            "Choose a plant to monitor",
-            ["pepper", "groundnut", "tomato"],
-            key="plant_selection",
-        )
+    # Optimal Conditions Section
+    plant_name = st.selectbox(
+        t("Choose a plant to monitor"), ["pepper", "groundnut", "tomato"]
+    )
+    optimal = optimal_conditions[plant_name]
+    render_card(
+        t(f"Optimal {t('Temperature')} for {plant_name.capitalize()}"),
+        f"<b>{t('Temperature')}:</b> {optimal['temperature'][0]}°C - {optimal['temperature'][1]}°C",
+    )
+    render_card(
+        t(f"Optimal {t('Soil Moisture')} for {plant_name.capitalize()}"),
+        f"<b>{t('Soil Moisture')}:</b> {optimal['soil_moisture'][0]}% - {optimal['soil_moisture'][1]}%",
+    )
+    render_card(
+        t(f"Optimal {t('Humidity')} for {plant_name.capitalize()}"),
+        f"<b>{t('Humidity')}:</b> {optimal['humidity'][0]}% - {optimal['humidity'][1]}%",
+    )
 
-        # Optimal conditions in two-column layout with smaller cards
-        st.markdown("<h3>Optimal Conditions</h3>", unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Temperature:</b> {optimal_conditions[plant_name]['temperature_range']}</div>",
-                unsafe_allow_html=True,
-            )
-        with col2:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Humidity:</b> {optimal_conditions[plant_name]['humidity_range']}</div>",
-                unsafe_allow_html=True,
-            )
+    # Real-Time Sensor Data Section
+    sensor_data = fetch_sensor_data()
+    render_card(
+        t("Temperature"),
+        f"<b>{t('Temperature')}:</b> {sensor_data.get('temperature')}°C",
+    )
+    render_card(
+        t("Soil Moisture"),
+        f"<b>{t('Soil Moisture')}:</b> {sensor_data.get('soil_moisture')}%",
+    )
+    render_card(
+        t("Humidity"),
+        f"<b>{t('Humidity')}:</b> {sensor_data.get('humidity')}%",
+    )
 
-        # Real-time sensor data in cards
-        st.markdown("<h3>Real-Time Sensor Data</h3>", unsafe_allow_html=True)
-        sensor_data = fetch_sensor_data()
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Temperature:</b> {sensor_data.get('temperature', 'N/A')}°C</div>",
-                unsafe_allow_html=True,
-            )
-        with col2:
-            st.markdown(
-                f"<div class='card'>"
-                f"<b>Humidity:</b> {sensor_data.get('humidity', 'N/A')}%</div>",
-                unsafe_allow_html=True,
-            )
+    # Soil Analysis Button
+    if st.button(t("Analyze Soil")):
+        soil_analysis = analyze_soil(sensor_data, language)
+        render_card(t("Soil Analysis"), soil_analysis)
 
-        # Environmental analysis in card
-        if sensor_data.get("temperature") and sensor_data.get("humidity"):
-            if st.button("Analyze Environment"):
-                environment_analysis = analyze_environment_with_gemini(
-                    sensor_data["temperature"], sensor_data["humidity"], plant_name
-                )
-                st.markdown(
-                    f"<div class='card'>"
-                    f"<b>Environment Analysis:</b><br>{environment_analysis}</div>",
-                    unsafe_allow_html=True,
-                )
+    # Pump Control Section
+    st.markdown(f"### {t('Pump Control')}")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(t("Activate Irrigation")):
+            message = control_pump(sensor_pins["irrigation_pump"])
+            st.success(t(message))
+    with col2:
+        if st.button(t("Activate Fertigation")):
+            message = control_pump(sensor_pins["fertilizer_pump"])
+            st.success(t(message))
 
-        # Image analysis in full-width card
-        st.markdown("<h3>Plant Image Analysis</h3>", unsafe_allow_html=True)
-        uploaded_image = st.file_uploader(
-            "Upload an image of your plant", type=["jpg", "jpeg", "png"]
-        )
-        if uploaded_image is not None:
-            img = Image.open(uploaded_image)
-            st.image(img, caption="Uploaded Plant Image", use_container_width=True)
-            if st.button("Analyze Image"):
-                image_analysis = analyze_image_with_gemini(img)
-                st.markdown(
-                    f"<div class='card' style='width: 100%;'>"
-                    f"<b>Image Analysis:</b><br>{image_analysis}</div>",
-                    unsafe_allow_html=True,
-                )
+    # Plant Image Analysis Section
+    uploaded_image = st.file_uploader(
+        t("Upload an image of your plant"), type=["jpg", "jpeg", "png"]
+    )
+    if uploaded_image:
+        img = Image.open(uploaded_image)
+        st.image(img, caption=t("Uploaded Plant Image"), use_column_width=True)
+        if st.button(t("Analyze Plant")):
+            img_path = f"temp_image.{uploaded_image.type.split('/')[-1]}"
+            img.save(img_path)
+            plant_analysis = analyze_plant(img_path, language)
+            os.remove(img_path)
+            render_card(t("Plant Analysis"), plant_analysis)
 
 
 if __name__ == "__main__":
