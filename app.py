@@ -282,7 +282,11 @@ def app():
     )
     if uploaded_image:
         img = Image.open(uploaded_image)
-        st.image(img, caption=t("Uploaded Plant Image"), use_column_width=True)
+        st.image(
+            img,
+            caption=t("Uploaded Plant Image"),
+            width=400,
+        )
         if st.button(t("Analyze Plant")):
             img_path = f"temp_image.{uploaded_image.type.split('/')[-1]}"
             img.save(img_path)
