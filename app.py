@@ -111,7 +111,7 @@ def control_pump(pump_pin):
 
 # Soil analysis using Gemini
 def analyze_soil(sensor_data, language):
-    prompt = f"Analyze the soil based on these parameters: temperature={sensor_data.get('temperature')}°C, soil moisture={sensor_data.get('soil_moisture')}%, and humidity={sensor_data.get('humidity')}%. Provide the response in {language}."
+    prompt = f"Analyze the soil with temperature={sensor_data.get('temperature')}°C, soil moisture={sensor_data.get('soil_moisture')}%, and humidity={sensor_data.get('humidity')}%. Identify any issue, its possible cause, and suggest one solution in {language}."
     model = genai.GenerativeModel("gemini-1.5-pro")
     response = model.generate_content(prompt)
     return response.text if response.text else "Analysis failed."
@@ -121,7 +121,7 @@ def analyze_soil(sensor_data, language):
 def analyze_plant(image_path, language):
     with open(image_path, "rb") as img_file:
         img_content = base64.b64encode(img_file.read()).decode("utf-8")
-    prompt = f"Analyze the health of a plant based on this image. Provide the response in {language}."
+    prompt = f" Analyze this plant image and summarize your findings:Identify the disease (if any) affecting the plant.State one possible cause of the disease.Recommend a solution (includin what can be used to treat it).. Provide the response in {language}."
     model = genai.GenerativeModel("gemini-1.5-pro")
     response = model.generate_content(
         [{"mime_type": "image/jpeg", "data": img_content}, prompt]
