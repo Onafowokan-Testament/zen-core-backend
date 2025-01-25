@@ -111,7 +111,6 @@ def control_pump(pump_pin):
 
 # Soil analysis using Gemini
 def analyze_soil(sensor_data, language):
-
     prompt = f"Analyze the soil based on these parameters: temperature={sensor_data.get('temperature')}°C, soil moisture={sensor_data.get('soil_moisture')}%, and humidity={sensor_data.get('humidity')}%. Provide the response in {language}."
     model = genai.GenerativeModel("gemini-1.5-pro")
     response = model.generate_content(prompt)
@@ -127,29 +126,25 @@ def analyze_plant(image_path, language):
     response = model.generate_content(
         [{"mime_type": "image/jpeg", "data": img_content}, prompt]
     ).text
-
     return response if response else "Analysis failed."
 
 
 # Reusable function to render cards
 def render_card(title, content):
-    st.markdown(
-        f"""
-        <div style="
-            background-color: white; 
-            color: black; 
-            border: 2px solid black; 
-            border-radius: 10px; 
-            padding: 20px; 
-            margin-bottom: 20px;
-            box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
-        ">
-            <h3 style="text-align: center;">{title}</h3>
-            <p style="text-align: center;">{content}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    return f"""
+    <div style="
+        background-color: white; 
+        color: black; 
+        border: 2px solid black; 
+        border-radius: 10px; 
+        padding: 20px; 
+        margin-bottom: 20px;
+        box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
+    ">
+        <h3 style="text-align: center;">{title}</h3>
+        <p style="text-align: center;">{content}</p>
+    </div>
+    """
 
 
 # Streamlit App
@@ -177,18 +172,32 @@ def app():
     lga = st.text_input(t("Enter LGA for weather details"), "Lagos")
     weather_data = fetch_weather(lga)
     if "error" not in weather_data:
-        render_card(
-            t("Temperature"),
-            f"<b>{t('Temperature')}:</b> {weather_data['temperature']}°C",
-        )
-        render_card(
-            t("Weather Condition"),
-            f"<b>{t('Condition')}:</b> {t(weather_data['condition'])} {weather_data['emoji']}",
-        )
-        render_card(
-            t("Humidity"),
-            f"<b>{t('Humidity')}:</b> {weather_data['humidity']}%",
-        )
+        # Display weather data in 3 columns
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown(
+                render_card(
+                    t("Temperature"),
+                    f"<b>{t('Temperature')}:</b> {weather_data['temperature']}°C",
+                ),
+                unsafe_allow_html=True,
+            )
+        with col2:
+            st.markdown(
+                render_card(
+                    t("Weather Condition"),
+                    f"<b>{t('Condition')}:</b> {t(weather_data['condition'])} {weather_data['emoji']}",
+                ),
+                unsafe_allow_html=True,
+            )
+        with col3:
+            st.markdown(
+                render_card(
+                    t("Humidity"),
+                    f"<b>{t('Humidity')}:</b> {weather_data['humidity']}%",
+                ),
+                unsafe_allow_html=True,
+            )
     else:
         st.error(t(weather_data["error"]))
 
@@ -197,38 +206,63 @@ def app():
         t("Choose a plant to monitor"), ["pepper", "groundnut", "tomato"]
     )
     optimal = optimal_conditions[plant_name]
-    render_card(
-        t(f"Optimal {t('Temperature')} for {plant_name.capitalize()}"),
-        f"<b>{t('Temperature')}:</b> {optimal['temperature'][0]}°C - {optimal['temperature'][1]}°C",
-    )
-    render_card(
-        t(f"Optimal {t('Soil Moisture')} for {plant_name.capitalize()}"),
-        f"<b>{t('Soil Moisture')}:</b> {optimal['soil_moisture'][0]}% - {optimal['soil_moisture'][1]}%",
-    )
-    render_card(
-        t(f"Optimal {t('Humidity')} for {plant_name.capitalize()}"),
-        f"<b>{t('Humidity')}:</b> {optimal['humidity'][0]}% - {optimal['humidity'][1]}%",
-    )
+
+    # Display optimal conditions in 3 columns
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(
+            render_card(
+                t(f"Optimal {t('Temperature')} for {plant_name.capitalize()}"),
+                f"<b>{t('Temperature')}:</b> {optimal['temperature'][0]}°C - {optimal['temperature'][1]}°C",
+            ),
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            render_card(
+                t(f"Optimal {t('Soil Moisture')} for {plant_name.capitalize()}"),
+                f"<b>{t('Soil Moisture')}:</b> {optimal['soil_moisture'][0]}% - {optimal['soil_moisture'][1]}%",
+            ),
+            unsafe_allow_html=True,
+        )
+    with col3:
+        st.markdown(
+            render_card(
+                t(f"Optimal {t('Humidity')} for {plant_name.capitalize()}"),
+                f"<b>{t('Humidity')}:</b> {optimal['humidity'][0]}% - {optimal['humidity'][1]}%",
+            ),
+            unsafe_allow_html=True,
+        )
 
     # Real-Time Sensor Data Section
     sensor_data = fetch_sensor_data()
-    render_card(
-        t("Temperature"),
-        f"<b>{t('Temperature')}:</b> {sensor_data.get('temperature')}°C",
+    st.markdown(
+        render_card(
+            t("Temperature"),
+            f"<b>{t('Temperature')}:</b> {sensor_data.get('temperature')}°C",
+        ),
+        unsafe_allow_html=True,
     )
-    render_card(
-        t("Soil Moisture"),
-        f"<b>{t('Soil Moisture')}:</b> {sensor_data.get('soil_moisture')}%",
+    st.markdown(
+        render_card(
+            t("Soil Moisture"),
+            f"<b>{t('Soil Moisture')}:</b> {sensor_data.get('soil_moisture')}%",
+        ),
+        unsafe_allow_html=True,
     )
-    render_card(
-        t("Humidity"),
-        f"<b>{t('Humidity')}:</b> {sensor_data.get('humidity')}%",
+    st.markdown(
+        render_card(
+            t("Humidity"), f"<b>{t('Humidity')}:</b> {sensor_data.get('humidity')}%"
+        ),
+        unsafe_allow_html=True,
     )
 
     # Soil Analysis Button
     if st.button(t("Analyze Soil")):
         soil_analysis = analyze_soil(sensor_data, language)
-        render_card(t("Soil Analysis"), soil_analysis)
+        st.markdown(
+            render_card(t("Soil Analysis"), soil_analysis), unsafe_allow_html=True
+        )
 
     # Pump Control Section
     st.markdown(f"### {t('Pump Control')}")
@@ -254,8 +288,11 @@ def app():
             img.save(img_path)
             plant_analysis = analyze_plant(img_path, language)
             os.remove(img_path)
-            render_card(t("Plant Analysis"), plant_analysis)
+            st.markdown(
+                render_card(t("Plant Analysis"), plant_analysis), unsafe_allow_html=True
+            )
 
 
 if __name__ == "__main__":
+    app()
     app()
